@@ -1,7 +1,9 @@
+#!/usr/bin/env python3
 # -*- coding: utf-8; mode:python -*-
 import sys
 import json
 import socket
+import traceback
 
 GREEN = "\033[32m"
 RED = "\033[31m"
@@ -67,43 +69,29 @@ def cprint(update_type, s):
         return
     print(s)
     return
-def display_net(timestamp, update_type, fd, stype, info,
-                without_header = False):
+def display_net(timestamp, update_type, fd, stype, info):
     header = f'{timestamp} {fd:>5}'
     inode = info['inode']
     l_addr_port = hex_ip_port(info['local'])
     r_addr_port = hex_ip_port(info['remote'])
     hex_st = info['st']
     st = TCP_STATES[hex_st] if hex_st in TCP_STATES else hex_st
-    if without_header:
-        cprint(
-            update_type,
-            ' ' * len(header) +
-            f' {update_type}{stype:<6} {inode:>10} {l_addr_port} {r_addr_port} {st}')
-    else:
-        cprint(
-            update_type,
-            header +
-            f' {update_type}{stype:<6} {inode:>10} {l_addr_port} {r_addr_port} {st}')
+    cprint(
+        update_type,
+        header +
+        f' {update_type}{stype:<6} {inode:>10} {l_addr_port} {r_addr_port} {st}')
 
-def display_net6(timestamp, update_type, fd, stype, info,
-                 without_header = False):
+def display_net6(timestamp, update_type, fd, stype, info):
     header = f'{timestamp} {fd:>5}'
     inode = info['inode']
     l_addr_port = hex_ip6_port(info['local'])
     r_addr_port = hex_ip6_port(info['remote'])
     hex_st = info['st']
     st = TCP_STATES[hex_st] if hex_st in TCP_STATES else hex_st
-    if without_header:
-        cprint(
-            update_type,
-            ' ' * len(header) +
-            f' {update_type}{stype:<6} {inode:>10} {l_addr_port} {r_addr_port} {st}')
-    else:
-        cprint(
-            update_type,
-            header +
-            f' {update_type}{stype:<6} {inode:>10} {l_addr_port} {r_addr_port} {st}')
+    cprint(
+        update_type,
+        header +
+        f' {update_type}{stype:<6} {inode:>10} {l_addr_port} {r_addr_port} {st}')
 
 def display_epoll_events(first, s, update, tfd, hex_events):
     events = decode_epoll_events(int(hex_events, 16))
@@ -112,13 +100,10 @@ def display_epoll_events(first, s, update, tfd, hex_events):
     else:
         cprint(update, ' ' * len(s) + f' {update}{tfd:>5} {events}')
 
-def display_epoll(timestamp, update_type, fd, stype, info,
-                  without_header = False):
+def display_epoll(timestamp, update_type, fd, stype, info):
     header = f'{timestamp} {fd:>5}'
-    if without_header:
-        s = ' ' * len(header) + f' {update_type}{stype:<6} '
-    else:
-        s = header + f' {update_type}{stype:<6} '
+    inode = info['inode']
+    s = header + f' {update_type}{stype:<6} {inode:>10} '
     events = info['events']
     first = True
     for tfd in sorted(events.keys(), key = int):
@@ -129,7 +114,8 @@ def display_epoll(timestamp, update_type, fd, stype, info,
 def display_epoll_change(timestamp, update_type, fd, stype,
                          new_info, old_info):
     header = f'{timestamp} {fd:>5}'
-    s = f'{header} {update_type}{stype:<6} '
+    inode = info['inode']
+    s = f'{header} {update_type}{stype:<6} {info.inode:>10} '
     new_events = new_info['events']
     old_events = old_info['events']
     first = True
@@ -144,14 +130,14 @@ def display_epoll_change(timestamp, update_type, fd, stype,
                 if new_hex_events == old_hex_events:
                     display_epoll_events(first, s, '=', tfd, new_hex_events)
                 else:
-                    display_epoll_events(first, s, '+', tfd, new_hex_events)
-                    display_epoll_events(False, s, '-', tfd, old_hex_events)
+                    display_epoll_events(first, s, '-', tfd, old_hex_events)
+                    display_epoll_events(False, s, '+', tfd, new_hex_events)
         else:
             old_hex_events = old_events[tfd]
             display_epoll_events(first, s, '-', tfd, old_hex_events)
         first = False
 
-def display_unix(timestamp, update_type, fd, info, without_header = False):
+def display_unix(timestamp, update_type, fd, info):
     header = f'{timestamp} {fd:>5}'
     inode = info['inode']
     path = info['path']
@@ -167,29 +153,17 @@ def display_unix(timestamp, update_type, fd, info, without_header = False):
           "CONNECTED" if hex_st == "03" else
           "DISCONNECTING" if hex_st == "04" else
           hex_st)
-    if without_header:
-        cprint(
-            update_type,
-            ' ' * len(header) +
-            f' {update_type}{stype:<6} {inode:>10} {usocktype:<10} {st} {path}')
-    else:
-        cprint(
-            update_type,
-            header +
-            f' {update_type}{stype:<6} {inode:>10} {usocktype:<10} {st} {path}')
+    cprint(
+        update_type,
+        header +
+        f' {update_type}{stype:<6} {inode:>10} {usocktype:<10} {st} {path}')
 
-def display_file(timestamp, update_type, fd, info, without_header = False):
+def display_file(timestamp, update_type, fd, info):
     stype = 'FILE'
     header = f'{timestamp} {fd:>5}'
     target = info['target']
-    if without_header:
-        cprint(
-            update_type,
-            ' ' * len(header) + f' {update_type}{stype:<6} {target}')
-    else:
-        cprint(
-            update_type,
-            header + f' {update_type}{stype:<6} {target}')
+    cprint(update_type,
+           header + f' {update_type}{stype:<6} {target}')
 
 def display_new(timestamp, fd, info):
     itype = info['type']
@@ -203,18 +177,18 @@ def display_new(timestamp, fd, info):
         display_unix(timestamp, '+', fd, info)
     elif itype == 'FILE':
         display_file(timestamp, '+', fd, info)
-def display_delete(timestamp, fd, info, without_header = False):
+def display_delete(timestamp, fd, info):
     itype = info['type']
     if itype in ('TCP', 'UDP'):
-        display_net(timestamp, '-', fd, info['type'], info, without_header)
+        display_net(timestamp, '-', fd, info['type'], info)
     elif itype in ('TCP6', 'UDP6'):
-        display_net6(timestamp, '-', fd, info['type'], info, without_header)
+        display_net6(timestamp, '-', fd, info['type'], info)
     elif itype == 'EPOLL':
-        display_epoll(timestamp, '-', fd, info['type'], info, without_header)
+        display_epoll(timestamp, '-', fd, info['type'], info)
     elif itype == 'UNIX':
-        display_unix(timestamp, '-', fd, info, without_header)
+        display_unix(timestamp, '-', fd, info)
     elif itype == 'FILE':
-        display_file(timestamp, '-', fd, info, without_header)
+        display_file(timestamp, '-', fd, info)
 def display_change(timestamp, fd, new_info, old_info):
     new_itype = new_info['type']
     old_itype = old_info['type']
@@ -222,8 +196,8 @@ def display_change(timestamp, fd, new_info, old_info):
         display_epoll_change(
             timestamp, '>', fd, new_info['type'], new_info, old_info)
     else:
+        display_delete(timestamp, fd, old_info)
         display_new(timestamp, fd, new_info)
-        display_delete(timestamp, fd, old_info, without_header = True)
 def display(event):
     timestamp = event['timestamp']
     fd = event['fd']
@@ -242,7 +216,8 @@ def main():
         try:
             event = json.loads(line)
         except json.JSONDecodeError:
-            continue
+            print(line, file = sys.stderr)
+            traceback.print_exc(file = sys.stderr)
         display(event)
 
 if __name__ == '__main__':

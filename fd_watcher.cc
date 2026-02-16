@@ -12,30 +12,32 @@
 #include <iostream>
 #include <list>
 #include <map>
+#include <memory>
 #include <sstream>
 #include <string>
 #include <thread>
 #include <unordered_map>
 #include <vector>
 
-enum net_type {
-  N_UNKNOWN,
-  N_UDP,
-  N_TCP,
-  N_UDP6,
-  N_TCP6,
-  N_UNIX,
-  N_EPOLL,
+enum class info_type {
+  I_UNKNOWN,
+  I_UDP,
+  I_TCP,
+  I_UDP6,
+  I_TCP6,
+  I_UNIX,
+  I_EPOLL,
+  I_FILE,
 };
 static const char*
-net_type_str(net_type type) {
-  switch (type) {
-  case N_UDP: return "UDP";
-  case N_TCP: return "TCP";
-  case N_UDP6: return "UDP6";
-  case N_TCP6: return "TCP6";
-  case N_UNIX: return "UNIX";
-  case N_EPOLL: return "EPOLL";
+info_type_str(info_type itype) {
+  switch (itype) {
+  case info_type::I_UDP: return "UDP";
+  case info_type::I_TCP: return "TCP";
+  case info_type::I_UDP6: return "UDP6";
+  case info_type::I_TCP6: return "TCP6";
+  case info_type::I_UNIX: return "UNIX";
+  case info_type::I_EPOLL: return "EPOLL";
   default:
     return "?";
   }
@@ -82,6 +84,7 @@ jstr(const std::string& s) {
 // ----------------------------------------------------------------------
 
 struct FdInfo {
+  using ptr = std::shared_ptr<FdInfo>;
   std::map<std::string, std::string> fd_event_map;
   void set(const std::string& fd, const std::string& events) {
     fd_event_map[fd] = events;
@@ -127,159 +130,198 @@ std::ostream& operator<<(std::ostream& stream,
   return stream;
 }
 
-struct NetInfo {
-  net_type type;
-  std::string inode;
-  std::string hex_local;
-  std::string hex_remote;
-  std::string hex_st;
-  std::string target;
-  FdInfo fd_info;
-  NetInfo() : type(N_UNKNOWN) {
-  }
-  NetInfo(net_type type,
-          const std::string& inode,
-          const std::string& target)
-    : type(type), inode(inode), target(target) {
-  }
-  NetInfo(net_type type,
-          const std::string& inode,
-          const std::string& hex_local,
-          const std::string& hex_remote,
-          const std::string& hex_st)
-    : type(type), inode(inode),
-      hex_local(hex_local), hex_remote(hex_remote), hex_st(hex_st) {
-  }
-  NetInfo(net_type type,
-          const std::string& inode,
-          const FdInfo& fd_info)
-    : type(type), inode(inode), fd_info(fd_info) {
-  }
-  explicit operator bool() const {
-    return type != N_UNKNOWN;
-  }
-  bool operator==(const NetInfo& others) const {
-    if (type != others.type) {
-      return false;
-    }
-    if (type == N_EPOLL) {
-      return fd_info == others.fd_info;
-    } else {
-      return
-        inode == others.inode &&
-        type == others.type &&
-        hex_local == others.hex_local &&
-        hex_remote == others.hex_remote &&
-        hex_st == others.hex_st;
-    }
-  }
-};
-std::ostream& operator<<(std::ostream& stream,
-                         const NetInfo& net_info) {
-  stream << "{"
-    "\"type\":\"" << net_type_str(net_info.type) << "\"";
-  switch (net_info.type) {
-  case N_UNKNOWN:
-    stream << ",\"inode\":\"" << net_info.inode << "\""
-           << ",\"raw\":\"" << jstr(net_info.target) << "\"";
-    break;
-  case N_UDP:
-  case N_TCP:
-  case N_UDP6:
-  case N_TCP6:
-    stream <<
-      ",\"inode\":\"" << net_info.inode << "\""
-      ",\"local\":\"" << net_info.hex_local << "\""
-      ",\"remote\":\"" << net_info.hex_remote << "\""
-      ",\"st\":\"" << net_info.hex_st << "\"";
-    break;
-  case N_UNIX:
-    stream <<
-      ",\"inode\":\"" << net_info.inode << "\""
-      ",\"path\":\"" << jstr(net_info.hex_local) << "\""
-      ",\"stype\":\"" << net_info.hex_remote << "\""
-      ",\"st\":\"" << net_info.hex_st << "\"";
-    break;
-  case N_EPOLL:
-    stream <<
-      ",\"events\":" << net_info.fd_info;
-    break;
-  default:
-    break;
-  }
-  stream << "}";
-  return stream;
-}
-
-// ----------------------------------------------------------------------
-enum info_type {
-  I_NONE,
-  I_FILE,
-  I_NET,
-};
-
 struct Info {
+  using ptr = std::shared_ptr<Info>;
   info_type itype;
-  std::string target;
-  NetInfo net_info;
-  Info() : itype(I_NONE) {
+  Info(info_type itype) : itype(itype) {
   }
-  explicit Info(const std::string& target)
-    : itype(I_FILE), target(target) {
+  virtual ~Info() = default;
+  virtual bool equals(const Info& other) const = 0;
+  virtual void print_to(std::ostream& stream) const = 0;
+};
+
+struct UnknownInfo : public Info {
+  using ptr = std::shared_ptr<UnknownInfo>;
+  std::string inode;
+  std::string raw;
+  UnknownInfo(const std::string& inode,
+              const std::string& raw)
+    : Info(info_type::I_UNKNOWN), inode(inode), raw(raw) {
   }
-  explicit Info(NetInfo net_info)
-    : itype(I_NET), net_info(net_info) {
+  ~UnknownInfo() {
   }
-  bool operator==(const Info& others) const {
-    if (itype != others.itype) {
+  bool equals(const Info& other) const override {
+    const UnknownInfo* p = dynamic_cast<const UnknownInfo*>(&other);
+    if (!p) {
       return false;
     }
-    switch (itype) {
-    case I_FILE:
-      return target == others.target;
-    case I_NET:
-      return net_info == others.net_info;
-    default:
-      return true;
+    return inode == p->inode &&
+      raw == p->raw;
+  }
+  void print_to(std::ostream& stream) const override {
+    stream << "{"
+      "\"type\":\"" << info_type_str(itype) << "\""
+      ",\"inode\":\"" << inode << "\""
+      ",\"raw\":\"" << jstr(raw) << "\""
+      "}";
+  }
+};
+
+struct TcpUdpInfo : public Info {
+  using ptr = std::shared_ptr<TcpUdpInfo>;
+  std::string inode;
+  std::string local;
+  std::string remote;
+  std::string st;
+  TcpUdpInfo(info_type itype,
+             const std::string& inode,
+             const std::string& local,
+             const std::string& remote,
+             const std::string& st)
+    : Info(itype), inode(inode), local(local), remote(remote), st(st) {
+  }
+  ~TcpUdpInfo() {
+  }
+  bool equals(const Info& other) const override {
+    const TcpUdpInfo* p = dynamic_cast<const TcpUdpInfo*>(&other);
+    if (!p) {
+      return false;
     }
+    return itype == p->itype &&
+      inode == p->inode &&
+      local == p->local &&
+      remote == p->remote &&
+      st == p->st;
+  }
+  void print_to(std::ostream& stream) const override {
+    stream << "{"
+      "\"type\":\"" << info_type_str(itype) << "\""
+      ",\"inode\":\"" << inode << "\""
+      ",\"local\":\"" << local << "\""
+      ",\"remote\":\"" << remote << "\""
+      ",\"st\":\"" << st << "\""
+      "}";
+  }
+};
+
+struct UnixInfo : public Info {
+  using ptr = std::shared_ptr<UnixInfo>;
+  std::string inode;
+  std::string path;
+  std::string stype;
+  std::string st;
+  UnixInfo(const std::string& inode,
+           const std::string& path,
+           const std::string& stype,
+           const std::string& st)
+    : Info(info_type::I_UNIX),
+      inode(inode), path(path), stype(stype), st(st) {
+  }
+  ~UnixInfo() {
+  }
+  bool equals(const Info& other) const override {
+    const UnixInfo* p = dynamic_cast<const UnixInfo*>(&other);
+    if (!p) {
+      return false;
+    }
+    return
+      inode == p->inode &&
+      path == p->path &&
+      stype == p->stype &&
+      st == p->st;
+  }
+  void print_to(std::ostream& stream) const override {
+    stream << "{"
+      "\"type\":\"" << info_type_str(itype) << "\""
+      ",\"inode\":\"" << inode << "\""
+      ",\"path\":\"" << jstr(path) << "\""
+      ",\"stype\":\"" << stype << "\""
+      ",\"st\":\"" << st << "\""
+      "}";
+  }
+};
+
+struct EpollInfo : public Info {
+  using ptr = std::shared_ptr<EpollInfo>;
+  std::string inode;
+  FdInfo::ptr fd_info;
+  EpollInfo(const std::string& inode, FdInfo::ptr fd_info)
+    : Info(info_type::I_EPOLL), inode(inode), fd_info(fd_info) {
+  }
+  ~EpollInfo() {
+  }
+  bool equals(const Info& other) const override {
+    const EpollInfo* p = dynamic_cast<const EpollInfo*>(&other);
+    if (!p) {
+      return false;
+    }
+    return inode == p->inode &&
+      *fd_info == *p->fd_info;
+  }
+  void print_to(std::ostream& stream) const override {
+    stream << "{"
+      "\"type\":\"" << info_type_str(itype) << "\""
+      ",\"inode\":\"" << inode << "\""
+      ",\"events\":" << *fd_info <<
+      "}";
+  }
+};
+
+struct FileInfo : public Info {
+  using ptr = std::shared_ptr<FileInfo>;
+  std::string target;
+  FileInfo(const std::string& target)
+    : Info(info_type::I_FILE), target(target) {
+  }
+  ~FileInfo() {
+  }
+  bool equals(const Info& other) const override {
+    const FileInfo* p = dynamic_cast<const FileInfo*>(&other);
+    if (!p) {
+      return false;
+    }
+    return target == p->target;
+  }
+  void print_to(std::ostream& stream) const override {
+    stream << "{"
+      "\"type\":\"" << info_type_str(itype) << "\""
+      ",\"target\":\"" << jstr(target) << "\""
+      "}";
   }
 };
 
 std::ostream& operator<<(std::ostream& stream,
-                         const Info& info) {
-  switch (info.itype) {
-  case I_NET:
-    stream << info.net_info;
-    break;
-  case I_FILE:
-    stream << "{"
-      "\"type\":\"FILE\""
-      ",\"target\":\"" << jstr(info.target) << "\""
-      "}";
-    break;
-  default:
-    stream << "{}";
-    break;
-  }
+                         const Info::ptr& info) {
+  info->print_to(stream);
   return stream;
 }
 
 // ----------------------------------------------------------------------
 
-enum action_type {
+enum class action_type {
   A_NONE,
   A_NEW,
   A_UPDATE,
   A_DELETE,
 };
 
+static std::string
+action_str(action_type atype) {
+  switch (atype) {
+  case action_type::A_NEW: return "NEW";
+  case action_type::A_UPDATE: return "UPDATE";
+  case action_type::A_DELETE: return "DELETE";
+  default: return "?";
+  }
+}
+
 struct Action {
   action_type atype;
-  Info old_info;
-  Info new_info;
-  Action() : atype(A_NONE) {
+  Info::ptr old_info;
+  Info::ptr new_info;
+  Action() : atype(action_type::A_NONE) {
   }
-  Action(action_type atype, Info old_info, Info new_info)
+  Action(action_type atype, Info::ptr old_info, Info::ptr new_info)
     : atype(atype), old_info(old_info), new_info(new_info) {
   }
 };
@@ -290,14 +332,17 @@ struct Difference {
   explicit Difference(timestamp_t timestamp)
     : timestamp(timestamp) {
   }
-  void act_new(int fd, const Info& info) {
-    change_fd_action_map.insert({fd, Action(A_NEW, Info(), info)});
+  void act_new(int fd, Info::ptr info) {
+    change_fd_action_map.insert({fd,
+        Action(action_type::A_NEW, nullptr, info)});
   }
-  void act_update(int fd, const Info& old_info, const Info& new_info) {
-    change_fd_action_map.insert({fd, Action(A_UPDATE, old_info, new_info)});
+  void act_update(int fd, Info::ptr old_info, Info::ptr new_info) {
+    change_fd_action_map.insert({fd,
+        Action(action_type::A_UPDATE, old_info, new_info)});
   }
-  void act_delete(int fd, const Info& info) {
-    change_fd_action_map.insert({fd, Action(A_DELETE, info, Info())});
+  void act_delete(int fd, Info::ptr info) {
+    change_fd_action_map.insert({fd,
+        Action(action_type::A_DELETE, info, nullptr)});
   }
   void report() const {
     for (const auto& v : change_fd_action_map) {
@@ -305,23 +350,15 @@ struct Difference {
       const Action& action = v.second;
       std::cout << "{"
         "\"timestamp\":\"" << timestamp_str(timestamp) << "\""
-        ",\"fd\":\"" << fd << "\"";
-      switch (action.atype) {
-      case A_NEW:
-        std::cout << ",\"updateType\":\"NEW\""
+        ",\"fd\":\"" << fd << "\""
+        ",\"updateType\":\"" << action_str(action.atype) << "\"";
+      if (action.new_info) {
+        std::cout <<
           ",\"new\":" << action.new_info;
-        break;
-      case A_UPDATE:
-        std::cout << ",\"updateType\":\"UPDATE\""
-          ",\"old\":" << action.old_info <<
-          ",\"new\":" << action.new_info;
-        break;
-      case A_DELETE:
-        std::cout << ",\"updateType\":\"DELETE\""
+      }
+      if (action.old_info) {
+        std::cout <<
           ",\"old\":" << action.old_info;
-        break;
-      default:
-        break;
       }
       std::cout << "}\n";
     }
@@ -344,11 +381,11 @@ inline std::string get_inode(const std::string& s) {
   return s.substr(p1 + 1, p2 - p1 - 1);
 }
 
-static std::unordered_map<std::string, NetInfo>
-read_net(const std::string& path,
-         const net_type type) {
+static void
+append_net_info(std::unordered_map<std::string, Info::ptr>* inode_info_map,
+                const std::string& path,
+                const info_type itype) {
   std::ifstream f(path);
-  std::unordered_map<std::string, NetInfo> out;
   std::string line;
   getline(f, line);  // header
 
@@ -368,30 +405,38 @@ read_net(const std::string& path,
     const std::string hex_remote = fields[2];
     const std::string hex_st = fields[3];
     const std::string inode = fields[9];
-    out[inode] = NetInfo(type, inode, hex_local, hex_remote, hex_st);
+    (*inode_info_map)[inode] =
+      std::make_shared<TcpUdpInfo>(itype, inode, hex_local, hex_remote, hex_st);
   }
-  return out;
 }
-static std::unordered_map<std::string, NetInfo>
-read_tcp(const std::string& pid) {
-  return read_net("/proc/" + pid + "/net/tcp", N_TCP);
+static void
+append_tcp_info(std::unordered_map<std::string, Info::ptr>* inode_info_map,
+                const std::string& pid) {
+  append_net_info(inode_info_map,
+                  "/proc/" + pid + "/net/tcp", info_type::I_TCP);
 }
-static std::unordered_map<std::string, NetInfo>
-read_udp(const std::string& pid) {
-  return read_net("/proc/" + pid + "/net/udp", N_UDP);
+static void
+append_udp_info(std::unordered_map<std::string, Info::ptr>* inode_info_map,
+                const std::string& pid) {
+  append_net_info(inode_info_map,
+                  "/proc/" + pid + "/net/udp", info_type::I_UDP);
 }
-static std::unordered_map<std::string, NetInfo>
-read_tcp6(const std::string& pid) {
-  return read_net("/proc/" + pid + "/net/tcp6", N_TCP6);
+static void
+append_tcp6_info(std::unordered_map<std::string, Info::ptr>* inode_info_map,
+                 const std::string& pid) {
+  append_net_info(inode_info_map,
+                  "/proc/" + pid + "/net/tcp6", info_type::I_TCP6);
 }
-static std::unordered_map<std::string, NetInfo>
-read_udp6(const std::string& pid) {
-  return read_net("/proc/" + pid + "/net/udp6", N_UDP6);
+static void
+append_udp6_info(std::unordered_map<std::string, Info::ptr>* inode_info_map,
+                 const std::string& pid) {
+  append_net_info(inode_info_map,
+                  "/proc/" + pid + "/net/udp6", info_type::I_UDP6);
 }
-static std::unordered_map<std::string, NetInfo>
-read_unix(const std::string& pid) {
+static void
+append_unix_info(std::unordered_map<std::string, Info::ptr>* inode_info_map,
+                 const std::string& pid) {
   std::ifstream f("/proc/" + pid + "/net/unix");
-  std::unordered_map<std::string, NetInfo> out;
   std::string line;
   getline(f, line);  // header
   while (getline(f, line)) {
@@ -407,14 +452,14 @@ read_unix(const std::string& pid) {
     const std::string inode = fields[6];
     const std::string raw_path =
       (fields.size() > 7) ? fields[7] : "";
-    out[inode] = NetInfo(N_UNIX, inode, raw_path, hex_type, hex_st);
+    (*inode_info_map)[inode] =
+      std::make_shared<UnixInfo>(inode, raw_path, hex_type, hex_st);
   }
-  return out;
 }
-static NetInfo
+static EpollInfo::ptr
 read_fdinfo(const std::string& pid, const std::string& fd) {
   std::string inode;
-  FdInfo fd_info;
+  FdInfo::ptr fd_info = std::make_shared<FdInfo>();
   const std::string path = "/proc/" + pid + "/fdinfo/" + fd;
   std::ifstream f(path);
   std::string line;
@@ -429,7 +474,7 @@ read_fdinfo(const std::string& pid, const std::string& fd) {
       if (t == "events:") {
         std::string events;
         iss >> events;
-        fd_info.set(tfd, events);
+        fd_info->set(tfd, events);
       }
       continue;
     }
@@ -437,26 +482,27 @@ read_fdinfo(const std::string& pid, const std::string& fd) {
       iss >> inode;
     }
   }
-  return NetInfo(N_EPOLL, inode, fd_info);
+  return std::make_shared<EpollInfo>(inode, fd_info);
 }
 
 // ----------------------------------------------------------------------
 
 struct Snapshot {
-  std::map<int, Info> fd_info_map;
+  std::map<int, Info::ptr> fd_info_map;
   void snapshot(const std::string& pid) {
     fd_info_map.clear();
-    auto inode_tcp_map = read_tcp(pid);
-    auto inode_udp_map = read_udp(pid);
-    auto inode_tcp6_map = read_tcp6(pid);
-    auto inode_udp6_map = read_udp6(pid);
-    auto inode_unix_map = read_unix(pid);
+    std::unordered_map<std::string, Info::ptr> inode_info_map;
+    append_udp_info(&inode_info_map, pid);
+    append_tcp_info(&inode_info_map, pid);
+    append_udp6_info(&inode_info_map, pid);
+    append_tcp6_info(&inode_info_map, pid);
+    append_unix_info(&inode_info_map, pid);
     DIR* d = opendir(("/proc/" + pid + "/fd").c_str());
     if (!d) {
       throw std::runtime_error("[cannot open fd directory]");
     }
     struct dirent* e;
-    char buf[512];
+    char buf[4096];
 
     while ((e = readdir(d))) {
       if (e->d_name[0] == '.') continue;
@@ -474,46 +520,28 @@ struct Snapshot {
       std::string target(buf);
       if (target.find("socket:[") == 0) {
         const std::string inode = get_inode(target);
-        bool b = false;
-        b = update_fd_info_map_(n_fd, inode, inode_tcp_map);
-        if (b) {
-          continue;
-        }
-        b = update_fd_info_map_(n_fd, inode, inode_udp_map);
-        if (b) {
-          continue;
-        }
-        b = update_fd_info_map_(n_fd, inode, inode_tcp6_map);
-        if (b) {
-          continue;
-        }
-        b = update_fd_info_map_(n_fd, inode, inode_udp6_map);
-        if (b) {
-          continue;
-        }
-        b = update_fd_info_map_(n_fd, inode, inode_unix_map);
+        bool b = update_fd_info_map_(n_fd, inode, inode_info_map);
         if (b) {
           continue;
         }
         fd_info_map.insert({n_fd,
-            Info(NetInfo(N_UNKNOWN, inode, target))});
+            std::make_shared<UnknownInfo>(inode, target)});
       } else if (target.find("anon_inode:[eventpoll]") == 0) {
-        fd_info_map.insert({n_fd, Info(read_fdinfo(pid, fd))});
+        fd_info_map.insert({n_fd, read_fdinfo(pid, fd)});
       } else {
-        fd_info_map.insert({n_fd, Info(target)});
+        fd_info_map.insert({n_fd, std::make_shared<FileInfo>(target)});
       }
     }
     closedir(d);
   }
   bool update_fd_info_map_(
       int fd, const std::string& inode,
-      const std::unordered_map<std::string, NetInfo>& inode_net_map) {
-    auto iter = inode_net_map.find(inode);
-    if (iter == inode_net_map.end()) {
+      const std::unordered_map<std::string, Info::ptr>& inode_info_map) {
+    auto iter = inode_info_map.find(inode);
+    if (iter == inode_info_map.end()) {
       return false;
     }
-    const NetInfo& net_info = iter->second;
-    fd_info_map[fd] = Info(net_info);
+    fd_info_map[fd] = iter->second;
     return true;
   }
 
@@ -523,7 +551,7 @@ struct Snapshot {
     std::list<int> deleted_fds;
     for (const auto& v : fd_info_map) {
       const int fd = v.first;
-      const Info& old_info = v.second;
+      const Info::ptr& old_info = v.second;
       auto it = new_snap.fd_info_map.find(fd);
       if (it == new_snap.fd_info_map.end()) {
         diff.act_delete(fd, old_info);
@@ -535,18 +563,18 @@ struct Snapshot {
     }
     for (const auto& v : new_snap.fd_info_map) {
       const int fd = v.first;
-      const Info& new_info = v.second;
+      const Info::ptr& new_info = v.second;
       auto it = fd_info_map.find(fd);
       if (it == fd_info_map.end()) {
         fd_info_map.insert({fd, new_info});
         diff.act_new(fd, new_info);
       } else {
-        Info& old_info = it->second;
-        if (new_info == old_info) {
+        Info::ptr& old_info = it->second;
+        if (old_info->equals(*new_info)) {
           continue;  // not changed
         }
         diff.act_update(fd, old_info, new_info);
-        old_info = new_info;
+        it->second = new_info;
       }
     }
     return diff;
