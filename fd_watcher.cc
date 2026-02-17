@@ -26,6 +26,7 @@ enum class info_type {
   I_UDP6,
   I_TCP6,
   I_UNIX,
+  I_PIPE,
   I_EPOLL,
   I_FILE,
 };
@@ -241,6 +242,29 @@ struct UnixInfo : public Info {
   }
 };
 
+struct PipeInfo : public Info {
+  using ptr = std::shared_ptr<PipeInfo>;
+  std::string inode;
+  PipeInfo(const std::string& inode)
+    : Info(info_type::I_PIPE), inode(inode) {
+  }
+  ~PipeInfo() {
+  }
+  bool equals(const Info& other) const override {
+    const PipeInfo* p = dynamic_cast<const PipeInfo*>(&other);
+    if (!p) {
+      return false;
+    }
+    return inode == p->inode;
+  }
+  void print_to(std::ostream& stream) const override {
+    stream << "{"
+      "\"type\":\"" << info_type_str(itype) << "\""
+      ",\"inode\":\"" << inode << "\""
+      "}";
+  }
+};
+
 struct EpollInfo : public Info {
   using ptr = std::shared_ptr<EpollInfo>;
   std::string inode;
@@ -382,9 +406,9 @@ inline std::string get_inode(const std::string& s) {
 }
 
 static void
-append_net_info(std::unordered_map<std::string, Info::ptr>* inode_info_map,
+append_net_info(const info_type itype,
                 const std::string& path,
-                const info_type itype) {
+                std::unordered_map<std::string, Info::ptr>* inode_info_map) {
   std::ifstream f(path);
   std::string line;
   getline(f, line);  // header
@@ -410,32 +434,36 @@ append_net_info(std::unordered_map<std::string, Info::ptr>* inode_info_map,
   }
 }
 static void
-append_tcp_info(std::unordered_map<std::string, Info::ptr>* inode_info_map,
-                const std::string& pid) {
-  append_net_info(inode_info_map,
-                  "/proc/" + pid + "/net/tcp", info_type::I_TCP);
+append_tcp_info(const std::string& pid,
+                std::unordered_map<std::string, Info::ptr>* inode_info_map) {
+  append_net_info(info_type::I_TCP,
+                  "/proc/" + pid + "/net/tcp",
+                  inode_info_map);
 }
 static void
-append_udp_info(std::unordered_map<std::string, Info::ptr>* inode_info_map,
-                const std::string& pid) {
-  append_net_info(inode_info_map,
-                  "/proc/" + pid + "/net/udp", info_type::I_UDP);
+append_udp_info(const std::string& pid,
+                std::unordered_map<std::string, Info::ptr>* inode_info_map) {
+  append_net_info(info_type::I_UDP,
+                  "/proc/" + pid + "/net/udp",
+                  inode_info_map);
 }
 static void
-append_tcp6_info(std::unordered_map<std::string, Info::ptr>* inode_info_map,
-                 const std::string& pid) {
-  append_net_info(inode_info_map,
-                  "/proc/" + pid + "/net/tcp6", info_type::I_TCP6);
+append_tcp6_info(const std::string& pid,
+                 std::unordered_map<std::string, Info::ptr>* inode_info_map) {
+  append_net_info(info_type::I_TCP6,
+                  "/proc/" + pid + "/net/tcp6",
+                  inode_info_map);
 }
 static void
-append_udp6_info(std::unordered_map<std::string, Info::ptr>* inode_info_map,
-                 const std::string& pid) {
-  append_net_info(inode_info_map,
-                  "/proc/" + pid + "/net/udp6", info_type::I_UDP6);
+append_udp6_info(const std::string& pid,
+                 std::unordered_map<std::string, Info::ptr>* inode_info_map) {
+  append_net_info(info_type::I_UDP6,
+                  "/proc/" + pid + "/net/udp6",
+                  inode_info_map);
 }
 static void
-append_unix_info(std::unordered_map<std::string, Info::ptr>* inode_info_map,
-                 const std::string& pid) {
+append_unix_info(const std::string& pid,
+                 std::unordered_map<std::string, Info::ptr>* inode_info_map) {
   std::ifstream f("/proc/" + pid + "/net/unix");
   std::string line;
   getline(f, line);  // header
@@ -492,11 +520,11 @@ struct Snapshot {
   void snapshot(const std::string& pid) {
     fd_info_map.clear();
     std::unordered_map<std::string, Info::ptr> inode_info_map;
-    append_udp_info(&inode_info_map, pid);
-    append_tcp_info(&inode_info_map, pid);
-    append_udp6_info(&inode_info_map, pid);
-    append_tcp6_info(&inode_info_map, pid);
-    append_unix_info(&inode_info_map, pid);
+    append_udp_info(pid, &inode_info_map);
+    append_tcp_info(pid, &inode_info_map);
+    append_udp6_info(pid, &inode_info_map);
+    append_tcp6_info(pid, &inode_info_map);
+    append_unix_info(pid, &inode_info_map);
     DIR* d = opendir(("/proc/" + pid + "/fd").c_str());
     if (!d) {
       throw std::runtime_error("[cannot open fd directory]");
@@ -526,6 +554,10 @@ struct Snapshot {
         }
         fd_info_map.insert({n_fd,
             std::make_shared<UnknownInfo>(inode, target)});
+      } else if (target.find("pipe:[") == 0) {
+        const std::string inode = get_inode(target);
+        fd_info_map.insert({n_fd,
+            std::make_shared<PipeInfo>(inode)});
       } else if (target.find("anon_inode:[eventpoll]") == 0) {
         fd_info_map.insert({n_fd, read_fdinfo(pid, fd)});
       } else {
@@ -548,7 +580,8 @@ struct Snapshot {
   Difference update_to(const Snapshot& new_snap,
                        timestamp_t timestamp) {
     Difference diff(timestamp);
-    std::list<int> deleted_fds;
+    std::vector<int> deleted_fds;
+    deleted_fds.reserve(fd_info_map.size());
     for (const auto& v : fd_info_map) {
       const int fd = v.first;
       const Info::ptr& old_info = v.second;
