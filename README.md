@@ -1,12 +1,14 @@
-fd_watcher is a real-time file descriptor monitoring tool for Linux processes.
+fd_watcher is a real-time file descriptor monitoring tool for Linux.
 
-It inspects /proc/[PID]/fd and correlates socket inodes with /proc/[PID]/net
-entries to provide human-readable output for:
+Unlike lsof or ss, it:
 
-- Regular files
-- TCP/UDP (IPv4/IPv6)
-- UNIX domain sockets
-- epoll instances (including monitored FDs and event masks)
+- Correlates /proc/[PID]/fd with /proc/[PID]/net
+- Decodes TCP/UDP/UNIX sockets
+- Inspects epoll instances and monitored FDs
+- Decodes open flags
+- Displays changes as colored diffs
+
+The watcher and the UI are separated via a JSON event stream.
 
 Changes are displayed as colored diffs (+/-/>) for easy tracking of runtime behavior.
 

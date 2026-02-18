@@ -12,21 +12,24 @@ import time
 import traceback
 
 try:
-    from typing import Any, Optional
+    from typing import Any, Dict, Optional
 except:
     pass
 
 # ----------------------------------------------------------------------
 class info_type(Enum):
     UNKNOWN = 0
-    UDP = 1
-    TCP = 2
-    UDP6 = 3
-    TCP6 = 4
-    UNIX = 5
-    PIPE = 6
-    EPOLL = 7
-    FILE = 8
+    SOCKET = 1
+    UDP = 2
+    TCP = 3
+    UDP6 = 4
+    TCP6 = 5
+    UNIX = 6
+    PIPE = 7
+    EPOLL = 8
+    EVENT = 9
+    TIMER = 10
+    FILE = 11
 
 class Info(ABC):
     def __init__(self, itype : info_type):
@@ -35,25 +38,35 @@ class Info(ABC):
     def clone(self) -> 'Info':
         pass
     @abstractmethod
-    def to_obj(self) -> dict[str, Any]:
+    def to_obj(self) -> Dict[str, Any]:
         pass
 class UnknownInfo(Info):
-    def __init__(self, inode : str, raw : str):
+    def __init__(self) -> None:
         super().__init__(info_type.UNKNOWN)
-        self.inode = inode
-        self.raw = raw
     def clone(self) -> 'UnknownInfo':
-        return UnknownInfo(self.inode, self.raw)
+        return UnknownInfo()
     def __eq__(self, other : object) -> bool:
         if not isinstance(other, UnknownInfo):
             return False
+        return self.itype == other.itype
+    def to_obj(self) -> Dict[str, str]:
+        return {'type': self.itype.name}
+class SocketInfo(Info):
+    def __init__(self, inode : str, target : str):
+        super().__init__(info_type.SOCKET)
+        self.inode = inode
+        self.target = target
+    def clone(self) -> 'SocketInfo':
+        return SocketInfo(self.inode, self.target)
+    def __eq__(self, other : object) -> bool:
+        if not isinstance(other, SocketInfo):
+            return False
         return (self.itype == other.itype and
-                self.inode == other.inode and
-                self.raw == other.raw)
-    def to_obj(self) -> dict[str, str]:
+                self.target == other.target)
+    def to_obj(self) -> Dict[str, str]:
         return {'type': self.itype.name,
                 'inode': self.inode,
-                'raw': self.raw}
+                'target': self.target}
 class TcpUdpInfo(Info):
     def __init__(self, itype : info_type, inode : str,
                  local : str, remote : str, st : str):
@@ -73,7 +86,7 @@ class TcpUdpInfo(Info):
                 self.local == other.local and
                 self.remote == other.remote and
                 self.st == other.st)
-    def to_obj(self) -> dict[str, str]:
+    def to_obj(self) -> Dict[str, str]:
         return {'type': self.itype.name,
                 'inode': self.inode,
                 'local': self.local,
@@ -91,67 +104,54 @@ class UnixInfo(Info):
     def __eq__(self, other : object) -> bool:
         if not isinstance(other, UnixInfo):
             return False
-        return (self.inode == other.inode and
-                self.path == other.path and
-                self.stype == other.stype and
-                self.st == other.st)
-    def to_obj(self) -> dict[str, str]:
+        return (
+            self.itype == other.itype and
+            self.inode == other.inode and
+            self.path == other.path and
+            self.stype == other.stype and
+            self.st == other.st)
+    def to_obj(self) -> Dict[str, str]:
         return {'type': self.itype.name,
                 'inode': self.inode,
                 'path': self.path,
                 'stype': self.stype,
                 'st': self.st}
-class PipeInfo(Info):
-    def __init__(self, inode : str):
-        super().__init__(info_type.PIPE)
+class FdInfo(Info):
+    def __init__(self, itype : info_type,
+                 inode : str, target : str, flags : str,
+                 tfds : Dict[str, Dict[str, Any]]):
+        super().__init__(itype)
         self.inode = inode
-    def clone(self) -> 'PipeInfo':
-        return PipeInfo(self.inode)
+        self.target = target
+        self.flags = flags
+        self.tfds = tfds
+    def clone(self) -> 'FdInfo':
+        return FdInfo(self.itype, self.inode, self.target, self.flags,
+                      dict(self.tfds))
     def __eq__(self, other : object) -> bool:
-        if not isinstance(other, PipeInfo):
-            return False
-        return self.inode == other.inode
-    def to_obj(self) -> dict[str, str]:
-        return {'type': self.itype.name,
-                'inode': self.inode}
-class EpollInfo(Info):
-    def __init__(self, inode : str, fd_info : dict[str, str]):
-        super().__init__(info_type.EPOLL)
-        self.inode = inode
-        self.fd_info = fd_info
-    def clone(self) -> 'EpollInfo':
-        return EpollInfo(self.inode, dict(self.fd_info))
-    def __eq__(self, other : object) -> bool:
-        if not isinstance(other, EpollInfo):
+        if not isinstance(other, FdInfo):
             return False
         return (self.inode == other.inode and
-                self.fd_info == other.fd_info)
-    def to_obj(self) -> dict[str, Any]:
-        return {'type': self.itype.name,
-                'inode': self.inode,
-                'events': self.fd_info}
-class FileInfo(Info):
-    def __init__(self, target : str):
-        super().__init__(info_type.FILE)
-        self.target = target
-    def clone(self) -> 'FileInfo':
-        return FileInfo(self.target)
-    def __eq__(self, other : object) -> bool:
-        if not isinstance(other, FileInfo):
-            return False
-        return self.target == other.target
-    def to_obj(self) -> dict[str, str]:
-        return {'type': self.itype.name,
-                'target': self.target}
+                self.target == other.target and
+                self.flags == other.flags and
+                self.tfds == other.tfds)
+    def to_obj(self) -> Dict[str, Any]:
+        obj : Dict[str, Any] = {'type': self.itype.name}
+        if self.inode:
+            obj['inode'] = self.inode
+        if self.target:
+            obj['target'] = self.target
+        if self.flags:
+            obj['flags'] = self.flags
+        if self.tfds:
+            obj['tfds'] = self.tfds
+        return obj
 def get_inode(s : str) -> str:
-    i1 = s.find('[')
-    i2 = s.find(']')
-    if i1 == -1 or i2 == -1:
-        return s
-    return s[i1 + 1:i2]
+    m = re.search(r'\[(\d+)\]', s)
+    return m.group(1) if m else s
 
 def append_net_info(itype : info_type, path : str,
-                    inode_info_map : dict[str , Info]) -> None:
+                    inode_info_map : Dict[str , Info]) -> None:
     with open(path) as f:
         is_header = True
         for line in f:
@@ -159,6 +159,8 @@ def append_net_info(itype : info_type, path : str,
                 is_header = False
                 continue
             fields = re.split(r'\s+', line)
+            if fields[0] == '':
+                fields = fields[1:]
             if len(fields) < 10:
                 continue
             (hex_local, hex_remote, hex_st, inode) = (
@@ -166,19 +168,19 @@ def append_net_info(itype : info_type, path : str,
             inode_info_map[inode] = TcpUdpInfo(
                 itype, inode, hex_local, hex_remote, hex_st)
 
-def append_tcp_info(pid : str, inode_info_map : dict[str, Info]) -> None:
+def append_tcp_info(pid : str, inode_info_map : Dict[str, Info]) -> None:
     append_net_info(info_type.TCP, f'/proc/{pid}/net/tcp',
                     inode_info_map)
-def append_udp_info(pid : str, inode_info_map : dict[str, Info]) -> None:
+def append_udp_info(pid : str, inode_info_map : Dict[str, Info]) -> None:
     append_net_info(info_type.UDP, f'/proc/{pid}/net/udp',
                     inode_info_map)
-def append_tcp6_info(pid : str, inode_info_map : dict[str, Info]) -> None:
+def append_tcp6_info(pid : str, inode_info_map : Dict[str, Info]) -> None:
     append_net_info(info_type.TCP6, f'/proc/{pid}/net/tcp6',
                     inode_info_map)
-def append_udp6_info(pid : str, inode_info_map : dict[str, Info]) -> None:
+def append_udp6_info(pid : str, inode_info_map : Dict[str, Info]) -> None:
     append_net_info(info_type.UDP6, f'/proc/{pid}/net/udp6',
                     inode_info_map)
-def append_unix_info(pid : str, inode_info_map : dict[str, Info]) -> None:
+def append_unix_info(pid : str, inode_info_map : Dict[str, Info]) -> None:
     path = f'/proc/{pid}/net/unix'
     with open(path) as f:
         is_header = True
@@ -187,6 +189,8 @@ def append_unix_info(pid : str, inode_info_map : dict[str, Info]) -> None:
                 is_header = False
                 continue
             fields = re.split(r'\s+', line)
+            if fields[0] == '':
+                fields = fields[1:]
             if len(fields) < 7:
                 continue
             (hex_type, hex_st, inode) = (
@@ -194,29 +198,39 @@ def append_unix_info(pid : str, inode_info_map : dict[str, Info]) -> None:
             raw_path = fields[7] if len(fields) > 7 else ''
             inode_info_map[inode] = UnixInfo(
                 inode, raw_path, hex_type, hex_st)
-def read_fdinfo(pid : str, fd : str) -> Optional[EpollInfo]:
+def read_fd_info(itype : info_type, pid : str, fd : str,
+                 inode : str, target : str) -> FdInfo:
     path = f'/proc/{pid}/fdinfo/{fd}'
-    try:
-        inode = ''
-        fd_info : dict[str, str] = {}
-        with open(path) as f:
-            for line in f:
-                fields = line.split()
-                if fields[0] == 'ino:':
-                    inode = fields[1]
-                elif fields[0] == 'tfd:':
-                    tfd = fields[1]
-                    if 'events:' in fields:
-                        idx = fields.index('events:')
-                        events = fields[idx + 1]
-                        fd_info[tfd] = events
-        return EpollInfo(inode, fd_info)
-    except FileNotFoundError:
-        return None
+    flags = ''
+    tfds : Dict[str, Any] = {}
+    with open(path) as f:
+        for line in f:
+            fields = line.split()
+            if fields[0] == 'flags:':
+                flags = fields[1]
+            elif fields[0] == 'ino:':
+                inode = fields[1]
+            elif fields[0] == 'tfd:':
+                tfd = fields[1]
+                if 'events:' in fields:
+                    idx = fields.index('events:')
+                    events = fields[idx + 1]
+                    tfds[tfd] = {'events': events}
+    return FdInfo(itype, inode, target, flags, tfds)
+def read_pipe_info(pid : str, fd : str, inode : str) -> FdInfo:
+    return read_fd_info(info_type.PIPE, pid, fd, inode, '')
+def read_epoll_info(pid : str, fd : str) -> FdInfo:
+    return read_fd_info(info_type.EPOLL, pid, fd, '', '')
+def read_event_info(pid : str, fd : str) -> FdInfo:
+    return read_fd_info(info_type.EVENT, pid, fd, '', '')
+def read_timer_info(pid : str, fd : str) -> FdInfo:
+    return FdInfo(info_type.TIMER, '', '', '', {})
+def read_file_info(pid : str, fd : str, target : str) -> FdInfo:
+    return read_fd_info(info_type.FILE, pid, fd, '', target)
 # ----------------------------------------------------------------------
 class action_type(Enum):
     NEW = 1
-    UPDATE = 2
+    CHANGE = 2
     DELETE = 3
 class Action:
     def __init__(self, atype : action_type,
@@ -228,20 +242,21 @@ class Action:
 class Difference:
     def __init__(self, timestamp : datetime.datetime):
         self.timestamp = timestamp
-        self.change_fd_action_map : dict[str, Action] = {}
+        self.change_fd_action_map : Dict[str, Action] = {}
     def act_new(self, fd : str, new_info : Info) -> None:
         self.change_fd_action_map[fd] = Action(
             action_type.NEW, None, new_info)
-    def act_update(self, fd : str,
+    def act_change(self, fd : str,
                    old_info : Info, new_info : Info) -> None:
         self.change_fd_action_map[fd] = Action(
-            action_type.UPDATE, old_info, new_info)
+            action_type.CHANGE, old_info, new_info)
     def act_delete(self, fd : str, old_info : Info) -> None:
         self.change_fd_action_map[fd] = Action(
             action_type.DELETE, old_info, None)
     def report(self) -> None:
-        for fd, action in self.change_fd_action_map.items():
-            item : dict[str, Any] = {
+        for fd in sorted(self.change_fd_action_map.keys(), key = int):
+            action = self.change_fd_action_map[fd]
+            item : Dict[str, Any] = {
                 'timestamp':
                 self.timestamp.strftime('%Y-%m-%d %H:%M:%S.%f')[:-3],
                 'fd': fd,
@@ -256,10 +271,10 @@ class Difference:
 # ----------------------------------------------------------------------
 class Snapshot:
     def __init__(self) -> None:
-        self.fd_info_map : dict[str, Info] = {}
+        self.fd_info_map : Dict[str, Info] = {}
     def snapshot(self, pid : str) -> None:
         self.fd_info_map = {}
-        inode_info_map : dict[str, Info] = {}
+        inode_info_map : Dict[str, Info] = {}
         append_udp_info(pid, inode_info_map)
         append_tcp_info(pid, inode_info_map)
         append_udp6_info(pid, inode_info_map)
@@ -277,22 +292,38 @@ class Snapshot:
                     b = self._update_fd_info_map(fd, inode, inode_info_map)
                     if b:
                         continue
-                    self.fd_info_map[fd] = UnknownInfo(inode, target)
+                    self.fd_info_map[fd] = SocketInfo(inode, target)
                     continue
                 if 'pipe:[' in target:
                     inode = get_inode(target)
-                    self.fd_info_map[fd] = PipeInfo(inode)
+                    try:
+                        self.fd_info_map[fd] = read_pipe_info(pid, fd, inode)
+                    except FileNotFoundError:
+                        pass
                     continue
                 if target == 'anon_inode:[eventpoll]':
-                    fd_info = read_fdinfo(pid, fd)
-                    if fd_info:
-                        self.fd_info_map[fd] = fd_info
-                        continue
-                self.fd_info_map[fd] = FileInfo(target)
+                    try:
+                        self.fd_info_map[fd] = read_epoll_info(pid, fd)
+                    except FileNotFoundError:
+                        pass
+                    continue
+                if target == 'anon_inode:[eventfd]':
+                    try:
+                        self.fd_info_map[fd] = read_event_info(pid, fd)
+                    except FileNotFoundError:
+                        pass
+                    continue
+                if target == 'anon_inode:[timerfd]':
+                    try:
+                        self.fd_info_map[fd] = read_timer_info(pid, fd)
+                    except FileNotFoundError:
+                        pass
+                    continue
+                self.fd_info_map[fd] = read_file_info(pid, fd, target)
             except FileNotFoundError:
-                continue
+                self.fd_info_map[fd] = UnknownInfo()
     def _update_fd_info_map(self, fd : str, inode : str,
-                            inode_info_map : dict[str, Info]) -> bool:
+                            inode_info_map : Dict[str, Info]) -> bool:
         if inode not in inode_info_map:
             return False
         self.fd_info_map[fd] = inode_info_map[inode].clone()
@@ -309,7 +340,7 @@ class Snapshot:
                 old_info = self.fd_info_map[fd]
                 if old_info == new_info:
                     continue
-                diff.act_update(fd, old_info, new_info)
+                diff.act_change(fd, old_info, new_info)
             else:
                 diff.act_new(fd, new_info)
             self.fd_info_map[fd] = new_info
@@ -330,6 +361,8 @@ def main() -> None:
                 current_snapshot, timestamp)
             difference.report()
             time.sleep(1)
+    except KeyboardInterrupt:
+        pass
     except:
         traceback.print_exc(file = sys.stderr)
 
