@@ -217,16 +217,6 @@ def read_fd_info(itype : info_type, pid : str, fd : str,
                     events = fields[idx + 1]
                     tfds[tfd] = {'events': events}
     return FdInfo(itype, inode, target, flags, tfds)
-def read_pipe_info(pid : str, fd : str, inode : str) -> FdInfo:
-    return read_fd_info(info_type.PIPE, pid, fd, inode, '')
-def read_epoll_info(pid : str, fd : str) -> FdInfo:
-    return read_fd_info(info_type.EPOLL, pid, fd, '', '')
-def read_event_info(pid : str, fd : str) -> FdInfo:
-    return read_fd_info(info_type.EVENT, pid, fd, '', '')
-def read_timer_info(pid : str, fd : str) -> FdInfo:
-    return FdInfo(info_type.TIMER, '', '', '', {})
-def read_file_info(pid : str, fd : str, target : str) -> FdInfo:
-    return read_fd_info(info_type.FILE, pid, fd, '', target)
 # ----------------------------------------------------------------------
 class action_type(Enum):
     NEW = 1
@@ -289,45 +279,44 @@ class Snapshot:
                 target = os.readlink(f'{dir_name}/{fd}')
                 if 'socket:[' in target:
                     inode = get_inode(target)
-                    b = self._update_fd_info_map(fd, inode, inode_info_map)
-                    if b:
-                        continue
-                    self.fd_info_map[fd] = SocketInfo(inode, target)
+                    if inode in inode_info_map:
+                        self.fd_info_map[fd] = inode_info_map[inode].clone()
+                    else:
+                        self.fd_info_map[fd] = SocketInfo(inode, target)
                     continue
                 if 'pipe:[' in target:
                     inode = get_inode(target)
                     try:
-                        self.fd_info_map[fd] = read_pipe_info(pid, fd, inode)
+                        self.fd_info_map[fd] = read_fd_info(
+                            info_type.PIPE, pid, fd, inode, '')
                     except FileNotFoundError:
-                        pass
+                        self.fd_info_map[fd] = FdInfo(
+                            info_type.PIPE, inode, '', '', {})
                     continue
                 if target == 'anon_inode:[eventpoll]':
                     try:
-                        self.fd_info_map[fd] = read_epoll_info(pid, fd)
+                        self.fd_info_map[fd] = read_fd_info(
+                            info_type.EPOLL, pid, fd, '', '')
                     except FileNotFoundError:
-                        pass
+                        self.fd_info_map[fd] = FdInfo(
+                            info_type.EPOLL, '', '', '', {})
                     continue
                 if target == 'anon_inode:[eventfd]':
                     try:
-                        self.fd_info_map[fd] = read_event_info(pid, fd)
+                        self.fd_info_map[fd] = read_fd_info(
+                            info_type.EVENT, pid, fd, '', '')
                     except FileNotFoundError:
-                        pass
+                        self.fd_info_map[fd] = FdInfo(
+                            info_type.EVENT, '', '', '', {})
                     continue
                 if target == 'anon_inode:[timerfd]':
-                    try:
-                        self.fd_info_map[fd] = read_timer_info(pid, fd)
-                    except FileNotFoundError:
-                        pass
+                    self.fd_info_map[fd] = FdInfo(
+                        info_type.TIMER, '', '', '', {})
                     continue
-                self.fd_info_map[fd] = read_file_info(pid, fd, target)
+                self.fd_info_map[fd] = read_fd_info(
+                    info_type.FILE, pid, fd, '', target)
             except FileNotFoundError:
                 self.fd_info_map[fd] = UnknownInfo()
-    def _update_fd_info_map(self, fd : str, inode : str,
-                            inode_info_map : Dict[str, Info]) -> bool:
-        if inode not in inode_info_map:
-            return False
-        self.fd_info_map[fd] = inode_info_map[inode].clone()
-        return True
     def update_to(self, new_snap : 'Snapshot',
                   timestamp : datetime.datetime) -> Difference:
         diff = Difference(timestamp)

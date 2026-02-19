@@ -121,17 +121,24 @@ def cprint(update_type : str, s : str) -> None:
         return
     print(s)
 def cdisplay(update_type : str,
-             timestamp : str, fd : str, stype : str,
+             timestamp : str, fd : str, itype : str,
              info: Dict[str, Any]) -> None:
     inode = info['inode'] if 'inode' in info else ''
     flags = decode_flags(info['flags']) if 'flags' in info else ''
     target = info['target'] if 'target' in info else ''
     cprint(update_type,
-           f'{timestamp} {fd:>5} {update_type:>7} {stype:<6} {inode:>10} {flags:<25} {target}')
+           f'{timestamp} {fd:>5} {update_type}{itype:<6} {inode:>10} {flags:<25} {target}')
+def display_unknown(timestamp : str, update_type : str, fd : str,
+                    info: Dict[str, Any]) -> None:
+    cdisplay(update_type, timestamp, fd, '?', info)
+def display_socket(timestamp : str, update_type : str, fd : str,
+                   info: Dict[str, Any]) -> None:
+    cdisplay(update_type, timestamp, fd, 'SOCKET', info)
 def display_net(timestamp : str, update_type : str,
-                fd : str, stype : str, info : Dict[str, str]) -> None:
+                fd : str, info : Dict[str, str]) -> None:
     header = f'{timestamp} {fd:>5}'
-    inode = info['inode']
+    inode = info['inode'] if 'inode' in info else ''
+    itype = info['type'] if 'type' in info else ''
     l_addr_port = hex_ip_port(info['local'])
     r_addr_port = hex_ip_port(info['remote'])
     hex_st = info['st']
@@ -139,12 +146,13 @@ def display_net(timestamp : str, update_type : str,
     cprint(
         update_type,
         header +
-        f' {update_type}{stype:<6} {inode:>10} {l_addr_port} {r_addr_port} {st}')
+        f' {update_type}{itype:<6} {inode:>10} {l_addr_port} {r_addr_port} {st}')
 
 def display_net6(timestamp : str, update_type : str,
-                 fd : str, stype : str, info : Dict[str, str]) -> None:
+                 fd : str, info : Dict[str, str]) -> None:
     header = f'{timestamp} {fd:>5}'
-    inode = info['inode']
+    inode = info['inode'] if 'inode' in info else ''
+    itype = info['type'] if 'type' in info else ''
     l_addr_port = hex_ip6_port(info['local'])
     r_addr_port = hex_ip6_port(info['remote'])
     hex_st = info['st']
@@ -152,11 +160,7 @@ def display_net6(timestamp : str, update_type : str,
     cprint(
         update_type,
         header +
-        f' {update_type}{stype:<6} {inode:>10} {l_addr_port} {r_addr_port} {st}')
-
-def display_socket(timestamp : str, update_type : str, fd : str,
-                   info: Dict[str, Any]) -> None:
-    cdisplay(update_type, timestamp, fd, '', info)
+        f' {update_type}{itype:<6} {inode:>10} {l_addr_port} {r_addr_port} {st}')
 def display_unix(timestamp : str, update_type : str, fd : str,
                  info: Dict[str, Any]) -> None:
     header = f'{timestamp} {fd:>5}'
@@ -165,7 +169,7 @@ def display_unix(timestamp : str, update_type : str, fd : str,
     path = info['path']
     hex_stype = info['stype']
     hex_st = info['st']
-    stype = 'UNIX'
+    itype = 'UNIX'
     usocktype = ("STREAM" if hex_stype == "0001" else
                  "DGRAM" if hex_stype == "0002" else
                  "SEQPACKET" if hex_stype == "0005" else
@@ -178,12 +182,12 @@ def display_unix(timestamp : str, update_type : str, fd : str,
     cprint(
         update_type,
         header +
-        f' {update_type}{stype:<6} {usocktype:<10} {st:<15} {path}')
+        f' {update_type}{itype:<6} {usocktype:<10} {st:<15} {path}')
 
 def display_pipe(timestamp : str, update_type : str, fd : str,
                  info : Dict[str, str]) -> None:
-    stype = 'PIPE'
-    cdisplay(update_type, timestamp, fd, stype, info)
+    itype = 'PIPE'
+    cdisplay(update_type, timestamp, fd, itype, info)
 
 def display_epoll_events(first : bool, s : str, update : str,
                          tfd : str, entry : Dict[str, str]) -> None:
@@ -197,10 +201,10 @@ def display_epoll_events(first : bool, s : str, update : str,
 def display_epoll(timestamp : str, update_type : str,
                   fd : str, info : Dict[str, Any]) -> None:
     header = f'{timestamp} {fd:>5}'
-    stype = 'EPOLL'
+    itype = 'EPOLL'
     inode = info['inode'] if 'inode' in info else ''
     flags = info['flags'] if 'flags' in info else ''
-    s = header + f' {update_type}{stype:<6} {inode:>10} '
+    s = header + f' {update_type}{itype:<6} {inode:>10} '
     tfd_entry_map = info['tfds'] if 'tfds' in info else {}
     first = True
     for tfd in sorted(tfd_entry_map.keys(), key = int):
@@ -209,16 +213,16 @@ def display_epoll(timestamp : str, update_type : str,
         first = False
 
 def display_epoll_change(timestamp : str, update_type : str,
-                         fd : str, stype : str,
+                         fd : str, itype : str,
                          new_info : Dict[str, Any],
                          old_info : Dict[str, Any]) -> None:
     header = f'{timestamp} {fd:>5}'
-    new_inode = new_info['inode']
-    new_s = f'{header} {update_type}{stype:<6} {new_inode:>10} '
-    old_inode = old_info['inode']
-    old_s = f'{header} {update_type}{stype:<6} {old_inode:>10} '
-    new_tfd_entry_map = new_info['tfds']
-    old_tfd_entry_map = old_info['tfds']
+    new_inode = new_info['inode'] if 'inode' in new_info else ''
+    new_s = f'{header} {update_type}{itype:<6} {new_inode:>10} '
+    old_inode = old_info['inode'] if 'inode' in old_info else ''
+    old_s = f'{header} {update_type}{itype:<6} {old_inode:>10} '
+    new_tfd_entry_map = new_info['tfds'] if 'tfds' in new_info else {}
+    old_tfd_entry_map = old_info['tfds'] if 'tfds' in old_info else {}
     first = True
     tfds = set(new_tfd_entry_map.keys()).union(old_tfd_entry_map.keys())
     for tfd in sorted(tfds, key = int):
@@ -245,59 +249,41 @@ def display_epoll_change(timestamp : str, update_type : str,
 
 def display_event(timestamp : str, update_type : str, fd : str,
                   info : Dict[str, str]) -> None:
-    stype = 'EVENT'
-    cdisplay(update_type, timestamp, fd, stype, info)
+    itype = 'EVENT'
+    cdisplay(update_type, timestamp, fd, itype, info)
 
 def display_timer(timestamp : str, update_type : str, fd : str,
                   info : Dict[str, str]) -> None:
-    stype = 'TIMER'
-    cdisplay(update_type, timestamp, fd, stype, info)
+    itype = 'TIMER'
+    cdisplay(update_type, timestamp, fd, itype, info)
 
 def display_file(timestamp : str, update_type : str, fd : str,
                  info : Dict[str, str]) -> None:
-    stype = 'FILE'
-    cdisplay(update_type, timestamp, fd, stype, info)
+    itype = 'FILE'
+    cdisplay(update_type, timestamp, fd, itype, info)
 
-def display_new(timestamp : str, fd : str,
-                info : Dict[str, Any]) -> None:
-    itype = info['type'] if 'type' in info else ''
-    if itype in ('TCP', 'UDP'):
-        display_net(timestamp, '+', fd, info['type'], info)
-    elif itype in ('TCP6', 'UDP6'):
-        display_net6(timestamp, '+', fd, info['type'], info)
+def display_new_delete(timestamp : str, u_type: str, fd : str, itype : str,
+                       info : Dict[str, Any]) -> None:
+    if itype == 'UNKNOWN':
+        display_unknown(timestamp, u_type, fd, info)
     elif itype == 'SOCKET':
-        display_socket(timestamp, '+', fd, info)
+        display_socket(timestamp, u_type, fd, info)
+    elif itype in ('UDP', 'TCP'):
+        display_net(timestamp, u_type, fd, info)
+    elif itype in ('UDP6', 'TCP6'):
+        display_net6(timestamp, u_type, fd, info)
     elif itype == 'UNIX':
-        display_unix(timestamp, '+', fd, info)
+        display_unix(timestamp, u_type, fd, info)
     elif itype == 'PIPE':
-        display_pipe(timestamp, '+', fd, info)
+        display_pipe(timestamp, u_type, fd, info)
     elif itype == 'EPOLL':
-        display_epoll(timestamp, '+', fd, info)
+        display_epoll(timestamp, u_type, fd, info)
     elif itype == 'EVENT':
-        display_event(timestamp, '+', fd, info)
+        display_event(timestamp, u_type, fd, info)
     elif itype == 'TIMER':
-        display_timer(timestamp, '+', fd, info)
+        display_timer(timestamp, u_type, fd, info)
     elif itype == 'FILE':
-        display_file(timestamp, '+', fd, info)
-    else:
-        print(f'unknown itype[{itype}]', file = sys.stderr)
-def display_delete(timestamp : str, fd : str,
-                   info : Dict[str, Any]) -> None:
-    itype = info['type'] if 'type' in info else ''
-    if itype in ('TCP', 'UDP'):
-        display_net(timestamp, '-', fd, itype, info)
-    elif itype in ('TCP6', 'UDP6'):
-        display_net6(timestamp, '-', fd, itype, info)
-    elif itype == 'EPOLL':
-        display_epoll(timestamp, '-', fd, info)
-    elif itype == 'SOCKET':
-        display_socket(timestamp, '-', fd, info)
-    elif itype == 'UNIX':
-        display_unix(timestamp, '-', fd, info)
-    elif itype == 'PIPE':
-        display_pipe(timestamp, '-', fd, info)
-    elif itype == 'FILE':
-        display_file(timestamp, '-', fd, info)
+        display_file(timestamp, u_type, fd, info)
     else:
         print(f'unknown itype[{itype}]', file = sys.stderr)
 def display_change(timestamp : str, fd : str,
@@ -309,18 +295,22 @@ def display_change(timestamp : str, fd : str,
         display_epoll_change(
             timestamp, '>', fd, new_itype, new_info, old_info)
     else:
-        display_delete(timestamp, fd, old_info)
-        display_new(timestamp, fd, new_info)
+        display_new_delete(timestamp, '-', fd, old_itype, old_info)
+        display_new_delete(timestamp, '+', fd, new_itype, new_info)
 def display(event : Dict[str, Any]) -> None:
     timestamp = event['timestamp']
     fd = event['fd']
     updateType = event['updateType']
     if updateType == 'NEW':
-        display_new(timestamp, fd, event['new'])
+        new_info = event['new']
+        new_itype = new_info['type'] if 'type' in new_info else ''
+        display_new_delete(timestamp, '+', fd, new_itype, new_info)
     elif updateType == 'CHANGE':
         display_change(timestamp, fd, event['new'], event['old'])
     elif updateType == 'DELETE':
-        display_delete(timestamp, fd, event['old'])
+        old_info = event['old']
+        old_itype = old_info['type'] if 'type' in old_info else ''
+        display_new_delete(timestamp, '-', fd, old_itype, old_info)
     else:
         print(f'unknown updateType[{updateType}]', file = sys.stderr)
 def main() -> None:
