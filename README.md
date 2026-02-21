@@ -15,5 +15,25 @@ Changes are displayed as colored diffs (+/-/>) for easy tracking of runtime beha
 ## Usage
 
 ```
-fd_watcher <PID> | fd_viewer.py
+fd_view <PID>
 ```
+
+or
+
+```
+fd_watcher.py <PID> | fd_decoder.py | fd_viewer.py
+```
+
+### fd_watcher.py
+
+Watch procfs and generate JSON lines.
+
+### fd_decoder.py
+
+Decode output of fd_watcher.py.
+
+
+### fd_viewer.py
+
+Display output of fd_decoder.py.
+
