@@ -1,0 +1,15 @@
+[project]
+name = "fd_watcher"
+version = "0.0.1"
+description = "watch FD events and generate JSON lists"
+requires-python = ">=3.6"
+
+[project.scripts]
+fd_watcher = "fdtools.fd_watcher.cli:main"
+fd_decoder = "fdtools.fd_decoder.cli:main"
+fd_viewer = "fdtools.fd_viewer.cli:main"
+fdwatch = "fdtools.fdwatch:main"
+
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"

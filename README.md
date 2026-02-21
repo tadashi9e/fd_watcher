@@ -12,28 +12,33 @@ The watcher and the UI are separated via a JSON event stream.
 
 Changes are displayed as colored diffs (+/-/>) for easy tracking of runtime behavior.
 
+## Install
+
+```
+pip install .
+```
+
 ## Usage
 
 ```
-fd_view <PID>
+fdwatch <PID>
 ```
 
 or
 
 ```
-fd_watcher.py <PID> | fd_decoder.py | fd_viewer.py
+fd_watcher <PID> | fd_decoder | fd_viewer
 ```
 
-### fd_watcher.py
+### fd_watcher
 
 Watch procfs and generate JSON lines.
 
-### fd_decoder.py
+### fd_decoder
 
 Decode output of fd_watcher.py.
 
 
-### fd_viewer.py
+### fd_viewer
 
 Display output of fd_decoder.py.
-

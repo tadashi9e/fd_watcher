@@ -1,6 +1,4 @@
-#!/usr/bin/env python3
 # -*- coding: utf-8; mode:python -*-
-# fd_decoder.py
 import errno
 import sys
 import json
@@ -181,7 +179,8 @@ def main() -> None:
                 continue
             try:
                 event = json.loads(line)
-                print(json.dumps(decode(event), separators = (',', ':')))
+                print(json.dumps(decode(event), separators = (',', ':')),
+                      flush = True)
             except json.JSONDecodeError:
                 print(line, file = sys.stderr)
                 traceback.print_exc(file = sys.stderr)
@@ -190,6 +189,3 @@ def main() -> None:
     except socket.error as e:
         if e.errno != errno.EPIPE:
             raise
-
-if __name__ == '__main__':
-    main()

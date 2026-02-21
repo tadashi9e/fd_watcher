@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 # -*- coding: utf-8; mode:python -*-
 from abc import ABC, abstractmethod
 import datetime
@@ -257,7 +256,6 @@ class Difference:
                 item['new'] = action.new_info.to_obj()
             print(json.dumps(item, separators = (',', ':')))
         sys.stdout.flush()
-
 # ----------------------------------------------------------------------
 class Snapshot:
     def __init__(self) -> None:
@@ -334,26 +332,25 @@ class Snapshot:
                 diff.act_new(fd, new_info)
             self.fd_info_map[fd] = new_info
         return diff
-
+def fd_watcher(pid : str) -> None:
+    summary_snapshot = Snapshot()
+    while True:
+        current_snapshot = Snapshot()
+        current_snapshot.snapshot(pid)
+        timestamp = datetime.datetime.now()
+        difference = summary_snapshot.update_to(
+            current_snapshot, timestamp)
+        difference.report()
+        time.sleep(1)
+# ----------------------------------------------------------------------
 def main() -> None:
     try:
         if len(sys.argv) != 2:
             print(f'usage: {sys.argv[0]} PID', file = sys.stderr)
             sys.exit(1)
         pid = sys.argv[1]
-        summary_snapshot = Snapshot()
-        while True:
-            current_snapshot = Snapshot()
-            current_snapshot.snapshot(pid)
-            timestamp = datetime.datetime.now()
-            difference = summary_snapshot.update_to(
-                current_snapshot, timestamp)
-            difference.report()
-            time.sleep(1)
+        fd_watcher(pid)
     except KeyboardInterrupt:
         pass
     except:
         traceback.print_exc(file = sys.stderr)
-
-if __name__ == '__main__':
-    main()

@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 # -*- coding: utf-8; mode:python -*-
 import errno
 import sys
@@ -38,9 +37,9 @@ class Formatter:
 # ----------------------------------------------------------------------
 def cprint(update_type : str, s : str) -> None:
     if sys.stdout.isatty() and update_type in COLOR_MAP:
-        print(COLOR_MAP[update_type] + s + RESET)
+        print(COLOR_MAP[update_type] + s + RESET, flush = True)
         return
-    print(s)
+    print(s, flush = True)
 def cdisplay(header_formatter : str,
              body_format : str,
              update_type : str,
@@ -279,6 +278,3 @@ def main() -> None:
     except socket.error as e:
         if e.errno != errno.EPIPE:
             raise
-
-if __name__ == '__main__':
-    main()
