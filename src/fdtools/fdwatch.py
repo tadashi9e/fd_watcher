@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 # -*- coding: utf-8; mode:python -*-
 import subprocess
 import sys
@@ -28,4 +29,5 @@ def main() -> None:
                 pass
     except KeyboardInterrupt:
         pass
-main()
+if __name__ == '__main__':
+    main()

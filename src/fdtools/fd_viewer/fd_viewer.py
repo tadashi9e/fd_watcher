@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 # -*- coding: utf-8; mode:python -*-
 import errno
 import sys
@@ -278,3 +279,5 @@ def main() -> None:
     except socket.error as e:
         if e.errno != errno.EPIPE:
             raise
+if __name__ == '__main__':
+    main()

@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 # -*- coding: utf-8; mode:python -*-
 from abc import ABC, abstractmethod
 import datetime
@@ -354,3 +355,5 @@ def main() -> None:
         pass
     except:
         traceback.print_exc(file = sys.stderr)
+if __name__ == '__main__':
+    main()

@@ -5,9 +5,9 @@ description = "watch FD events and generate JSON lists"
 requires-python = ">=3.6"
 
 [project.scripts]
-fd_watcher = "fdtools.fd_watcher.cli:main"
-fd_decoder = "fdtools.fd_decoder.cli:main"
-fd_viewer = "fdtools.fd_viewer.cli:main"
+fd_watcher = "fdtools.fd_watcher.fd_watcher:main"
+fd_decoder = "fdtools.fd_decoder.fd_decoder:main"
+fd_viewer = "fdtools.fd_viewer.fd_viewer:main"
 fdwatch = "fdtools.fdwatch:main"
 
 [build-system]
