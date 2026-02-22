@@ -21,18 +21,18 @@ COLOR_MAP = {
     '>': YELLOW,
 }
 
-GENERIC = '{inode:>10} {flags:<25} {target}'
 class Formatter:
     def __init__(self):
         self.HEADER = '{timestamp} {fd:>5} {update_type}{itype:<6}'
+        GENERIC =      '{inode:>10} {flags:<30} {target}'
         self.UNKNOWN = GENERIC
         self.SOCKET =  GENERIC
         self.PIPE =    GENERIC
         self.EVENT =   GENERIC
         self.TIMER =   GENERIC
         self.FILE =    GENERIC
-        self.NET =     '{inode:>10} {l_addr_port} {r_addr_port} {st}'
-        self.UNIX =    '           {usocktype:<10} {st:<15} {path}'
+        self.NET =     '{inode:>10} {st:<30} {l_addr_port} {r_addr_port}'
+        self.UNIX =    '{usocktype:<10} {st:<30} {path}'
         self.EPOLL =   '{inode:>10} {flags}'
         self.EPOLL_ENTRY = '{update}{tfd:>5} {events}'
 # ----------------------------------------------------------------------

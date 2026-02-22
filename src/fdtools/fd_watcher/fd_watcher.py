@@ -246,16 +246,16 @@ class Difference:
     def report(self) -> None:
         for fd in sorted(self.change_fd_action_map.keys(), key = int):
             action = self.change_fd_action_map[fd]
-            item : Dict[str, Any] = {
+            event : Dict[str, Any] = {
                 'timestamp':
                 self.timestamp.strftime('%Y-%m-%d %H:%M:%S.%f')[:-3],
                 'fd': fd,
                 'updateType': action.atype.name}
             if action.old_info:
-                item['old'] = action.old_info.to_obj()
+                event['old'] = action.old_info.to_obj()
             if action.new_info:
-                item['new'] = action.new_info.to_obj()
-            print(json.dumps(item, separators = (',', ':')))
+                event['new'] = action.new_info.to_obj()
+            print(json.dumps(event, separators = (',', ':')))
         sys.stdout.flush()
 # ----------------------------------------------------------------------
 class Snapshot:
